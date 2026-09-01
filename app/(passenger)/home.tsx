@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'expo-router';
 import {
+  ActivityIndicator,
   Alert,
   StyleSheet,
   Text,
@@ -9,25 +10,34 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../src/context/AuthContext';
+import { useLocation } from '../../src/hooks/useLocation';
 import { criarCorrida } from '../../src/services/rides';
+import MapaCard from '../../src/components/MapaCard';
 
-type Stage = 'home' | 'searching' | 'matched' | 'finished';
+type Stage = 'home' | 'searching' | 'matched';
 
 export default function PassengerHomeScreen() {
   const { usuario, sair } = useAuth();
+  const { localizacao, erro, carregando } = useLocation();
   const [stage, setStage] = useState<Stage>('home');
   const [destino, setDestino] = useState('');
-  const [carregando, setCarregando] = useState(false);
+  const [enviando, setEnviando] = useState(false);
 
   const pedirCorrida = () => {
-    if (!destino.trim()) return;
-    if (!usuario) return;
+    if (!destino.trim()) {
+      Alert.alert('Atenção', 'Digite o destino.');
+      return;
+    }
+    if (!usuario || !localizacao) {
+      Alert.alert('Atenção', 'Aguardando sua localização.');
+      return;
+    }
 
-    setCarregando(true);
+    setEnviando(true);
     criarCorrida({
       passageiro_id: usuario.id,
-      origem_lat: 0,
-      origem_lng: 0,
+      origem_lat: localizacao.lat,
+      origem_lng: localizacao.lng,
       destino_texto: destino.trim(),
     })
       .then(() => {
@@ -35,7 +45,7 @@ export default function PassengerHomeScreen() {
         setTimeout(() => setStage('matched'), 4000);
       })
       .catch((err: Error) => Alert.alert('Erro', err.message))
-      .finally(() => setCarregando(false));
+      .finally(() => setEnviando(false));
   };
 
   return (
@@ -48,23 +58,37 @@ export default function PassengerHomeScreen() {
       </View>
 
       {stage === 'home' && (
-        <View style={styles.card}>
-          <Text style={styles.label}>Para onde você vai?</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Digite o destino"
-            value={destino}
-            onChangeText={setDestino}
-          />
-          <TouchableOpacity
-            style={[styles.button, carregando && styles.buttonDisabled]}
-            onPress={pedirCorrida}
-            disabled={carregando}
-          >
-            <Text style={styles.buttonText}>
-              {carregando ? 'Enviando...' : 'Pedir corrida'}
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.content}>
+          <Text style={styles.label}>Sua localização (origem)</Text>
+          {carregando ? (
+            <View style={styles.mapLoading}>
+              <ActivityIndicator color="#F59E0B" />
+              <Text style={styles.mapLoadingText}>Obtendo localização...</Text>
+            </View>
+          ) : (
+            <MapaCard origem={localizacao} />
+          )}
+
+          {erro && <Text style={styles.erro}>{erro}</Text>}
+
+          <View style={styles.card}>
+            <Text style={styles.label}>Para onde você vai?</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Digite o destino"
+              value={destino}
+              onChangeText={setDestino}
+            />
+            <TouchableOpacity
+              style={[styles.button, (enviando || !localizacao) && styles.buttonDisabled]}
+              onPress={pedirCorrida}
+              disabled={enviando || !localizacao}
+            >
+              <Text style={styles.buttonText}>
+                {enviando ? 'Enviando...' : 'Pedir corrida'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -96,16 +120,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
     padding: 24,
-    justifyContent: 'center',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    position: 'absolute',
-    top: 60,
-    left: 24,
-    right: 24,
+    marginBottom: 20,
   },
   title: {
     fontSize: 22,
@@ -119,15 +139,36 @@ const styles = StyleSheet.create({
     color: '#EF4444',
     fontWeight: '600',
   },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  mapLoading: {
+    height: 250,
+    borderRadius: 12,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapLoadingText: {
+    marginTop: 8,
+    color: '#6B7280',
+  },
+  erro: {
+    color: '#EF4444',
+    marginTop: 8,
+  },
   card: {
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     padding: 20,
-  },
-  label: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
+    marginTop: 16,
   },
   status: {
     fontSize: 16,
