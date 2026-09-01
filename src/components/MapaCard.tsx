@@ -8,6 +8,8 @@ const C = {
   green: '#1C9A5B',
 };
 
+
+
 interface Props {
   origem: Localizacao | null;
   destino?: Localizacao | null;
@@ -33,18 +35,41 @@ export default function MapaCard({
 
   const lats = pontos.map((p) => p.lat);
   const lngs = pontos.map((p) => p.lng);
-  const latDelta = Math.max(Math.max(...lats) - Math.min(...lats) + 0.008, 0.02);
-  const lngDelta = Math.max(Math.max(...lngs) - Math.min(...lngs) + 0.008, 0.02);
+
+  const latSpan = Math.max(...lats) - Math.min(...lats);
+  const lngSpan = Math.max(...lngs) - Math.min(...lngs);
+
+  // Dynamic padding: more when points are close together
+  const latPad = latSpan < 0.005 ? 0.012 : latSpan < 0.02 ? 0.01 : 0.008;
+  const lngPad = lngSpan < 0.005 ? 0.012 : lngSpan < 0.02 ? 0.01 : 0.008;
+
+  const latDelta = Math.max(latSpan + latPad * 2, 0.022);
+  const lngDelta = Math.max(lngSpan + lngPad * 2, 0.022);
+
   const region = {
     latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
     longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
-    latitudeDelta: Math.min(latDelta, 0.6),
-    longitudeDelta: Math.min(lngDelta, 0.6),
+    latitudeDelta: Math.min(latDelta, 0.08),
+    longitudeDelta: Math.min(lngDelta, 0.08),
   };
 
   return (
     <View style={styles.container}>
-      <MapView style={styles.mapa} initialRegion={region}>
+      <MapView
+        style={styles.mapa}
+        initialRegion={region}
+        scrollEnabled={true}
+        zoomEnabled={true}
+        rotateEnabled={true}
+        pitchEnabled={true}
+        showsUserLocation={false}
+        showsMyLocationButton={true}
+        toolbarEnabled={false}
+        moveOnMarkerPress={false}
+        maxZoomLevel={18}
+        minZoomLevel={10}
+        mapType="standard"
+      >
         <Marker
           coordinate={{ latitude: origem.lat, longitude: origem.lng }}
           title={pickupLabel || 'Origem'}
@@ -90,14 +115,13 @@ export default function MapaCard({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    height: 250,
-    borderRadius: 0,
+    flex: 1,
     overflow: 'hidden',
     position: 'relative',
   },
   fallback: {
     width: '100%',
-    height: 250,
+    flex: 1,
     backgroundColor: '#D8E1E9',
   },
   mapa: {
@@ -105,8 +129,8 @@ const styles = StyleSheet.create({
   },
   labels: {
     position: 'absolute',
-    top: 8,
-    left: 8,
+    top: 10,
+    left: 10,
     gap: 4,
   },
   tag: {

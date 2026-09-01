@@ -127,6 +127,38 @@ export async function listarCorridasDoMotoboy(
   return (data ?? []) as RideComPassageiro[];
 }
 
+export async function listarHistoricoPassageiro(
+  passageiroId: string
+): Promise<RideComPassageiro[]> {
+  const { data, error } = await supabase
+    .from('rides')
+    .select('*, passageiros:passageiro_id (nome, telefone)')
+    .eq('passageiro_id', passageiroId)
+    .in('status', ['concluida', 'cancelada'])
+    .order('criado_em', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? []) as RideComPassageiro[];
+}
+
+export async function listarHistoricoMotoboy(
+  motoboyId: string
+): Promise<RideComPassageiro[]> {
+  const { data, error } = await supabase
+    .from('rides')
+    .select('*, passageiros:passageiro_id (nome, telefone)')
+    .eq('motoboy_id', motoboyId)
+    .in('status', ['concluida', 'cancelada'])
+    .order('criado_em', { ascending: false });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? []) as RideComPassageiro[];
+}
+
 export async function avaliarCorrida(
   rideId: string,
   nota: number
