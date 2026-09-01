@@ -16,6 +16,7 @@ interface AuthContextValue {
   usuario: User | null;
   carregando: boolean;
   entrar: (u: User) => Promise<void>;
+  atualizarUsuario: (u: User) => Promise<void>;
   sair: () => Promise<void>;
 }
 
@@ -48,6 +49,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(u));
   }, []);
 
+  const atualizarUsuario = useCallback(async (u: User) => {
+    setUsuario(u);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(u));
+  }, []);
+
   const sair = useCallback(async () => {
     setUsuario(null);
     await AsyncStorage.removeItem(STORAGE_KEY);
@@ -59,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ usuario, carregando, entrar, sair }}>
+    <AuthContext.Provider value={{ usuario, carregando, entrar, atualizarUsuario, sair }}>
       {children}
     </AuthContext.Provider>
   );

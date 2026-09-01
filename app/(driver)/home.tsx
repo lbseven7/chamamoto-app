@@ -385,7 +385,13 @@ export default function DriverHomeScreen() {
             {trips} {trips === 1 ? 'corrida hoje' : 'corridas hoje'} • R$ {earnings.toFixed(2).replace('.', ',')}
           </Text>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <View style={styles.headerActions}>
+          <Link href="/perfil">
+            <Text style={styles.headerLink}>Perfil</Text>
+          </Link>
+          <Link href="/historico">
+            <Text style={styles.headerLink}>Histórico</Text>
+          </Link>
           <Link href="/login" onPress={sair}>
             <Text style={styles.sairText}>Sair</Text>
           </Link>
@@ -640,6 +646,8 @@ const styles = StyleSheet.create({
   },
   hello: { fontSize: 18, fontWeight: '800', color: C.text },
   sairText: { color: C.red, fontWeight: '600', fontSize: 14 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headerLink: { color: C.navy, fontWeight: '600', fontSize: 14 },
   muted: { color: C.muted, fontSize: 13 },
   mutedSmall: { color: C.muted, fontSize: 12 },
   onlineLabel: {

@@ -139,3 +139,25 @@ export async function encerrarSessao(): Promise<void> {
     throw new Error(error.message);
   }
 }
+
+export async function atualizarPerfil(
+  userId: string,
+  dados: { nome: string; tipo: 'passageiro' | 'motoboy' }
+): Promise<User> {
+  const nome = dados.nome.trim();
+  if (!nome) {
+    throw new Error('Digite seu nome.');
+  }
+
+  const { data, error } = await supabase
+    .from('users')
+    .update({ nome, tipo: dados.tipo })
+    .eq('id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as User;
+}

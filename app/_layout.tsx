@@ -10,6 +10,8 @@ export default function RootLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="(passenger)" />
         <Stack.Screen name="(driver)" />
+        <Stack.Screen name="perfil" options={{ headerShown: true, title: 'Perfil' }} />
+        <Stack.Screen name="historico" options={{ headerShown: true, title: 'Histórico' }} />
       </Stack>
       <StatusBar style="auto" />
     </AuthProvider>

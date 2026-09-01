@@ -541,9 +541,17 @@ export default function PassengerHomeScreen() {
       {stage === 'home' && (
         <View style={styles.header}>
           <Text style={styles.title}>Olá, {usuario?.nome}</Text>
-          <Link href="/login" onPress={sair} style={styles.sair}>
-            <Text style={styles.sairText}>Sair</Text>
-          </Link>
+          <View style={styles.headerLinks}>
+            <Link href="/perfil" style={styles.sair}>
+              <Text style={styles.linkText}>Perfil</Text>
+            </Link>
+            <Link href="/historico" style={styles.sair}>
+              <Text style={styles.linkText}>Histórico</Text>
+            </Link>
+            <Link href="/login" onPress={sair} style={styles.sair}>
+              <Text style={styles.sairText}>Sair</Text>
+            </Link>
+          </View>
         </View>
       )}
     </KeyboardAvoidingView>
@@ -574,6 +582,8 @@ const styles = StyleSheet.create({
   },
   sair: { padding: 8 },
   sairText: { color: C.red, fontWeight: '600', fontSize: 14 },
+  headerLinks: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  linkText: { color: C.navy, fontWeight: '600', fontSize: 14 },
 
   mapContainer: {
     width: '100%',
