@@ -3,6 +3,8 @@ import { Link } from 'expo-router';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -49,7 +51,10 @@ export default function PassengerHomeScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>Olá, {usuario?.nome}</Text>
         <Link href="/login" onPress={sair} style={styles.sair}>
@@ -111,7 +116,7 @@ export default function PassengerHomeScreen() {
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
