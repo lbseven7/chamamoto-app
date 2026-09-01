@@ -1,8 +1,17 @@
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
 
 export default function NotFoundScreen() {
-  const { usuario } = useAuth();
+  const { usuario, carregando } = useAuth();
+
+  if (carregando) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator color="#F59E0B" />
+      </View>
+    );
+  }
 
   if (usuario) {
     return (
@@ -18,3 +27,12 @@ export default function NotFoundScreen() {
 
   return <Redirect href="/login" />;
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+});

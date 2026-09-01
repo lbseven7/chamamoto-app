@@ -1,3 +1,4 @@
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import supabase from './supabase';
 import type { Ride } from '../types';
 
@@ -159,4 +160,28 @@ export async function avaliarCorrida(
   if (erroDriver) {
     throw new Error(erroDriver.message);
   }
+}
+
+export function assinarCorrida(
+  rideId: string,
+  aoMudar: (ride: Ride) => void
+): RealtimeChannel {
+  const channel = supabase
+    .channel(`corrida-${rideId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'rides',
+        filter: `id=eq.${rideId}`,
+      },
+      (payload) => aoMudar(payload.new as Ride)
+    )
+    .subscribe();
+  return channel;
+}
+
+export function pararAssinaturaCorrida(channel: RealtimeChannel): void {
+  supabase.removeChannel(channel);
 }

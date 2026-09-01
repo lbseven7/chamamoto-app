@@ -1,3 +1,4 @@
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import supabase from './supabase';
 import type { Driver } from '../types';
 
@@ -66,4 +67,28 @@ export async function atualizarLocalizacaoDriver(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+export function assinarDriver(
+  userId: string,
+  aoMudar: (driver: Driver) => void
+): RealtimeChannel {
+  const channel = supabase
+    .channel(`driver-${userId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'drivers',
+        filter: `id=eq.${userId}`,
+      },
+      (payload) => aoMudar(payload.new as Driver)
+    )
+    .subscribe();
+  return channel;
+}
+
+export function pararAssinaturaDriver(channel: RealtimeChannel): void {
+  supabase.removeChannel(channel);
 }

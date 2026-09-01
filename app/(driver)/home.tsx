@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useFocusEffect } from 'expo-router';
 import {
   Alert,
@@ -11,7 +11,9 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../../src/context/AuthContext';
+import { useLocation } from '../../src/hooks/useLocation';
 import {
+  atualizarLocalizacaoDriver,
   atualizarStatusDriver,
   buscarDriver,
   registrarDriver,
@@ -30,6 +32,7 @@ type Status = 'offline' | 'disponivel';
 
 export default function DriverHomeScreen() {
   const { usuario, sair } = useAuth();
+  const { localizacao } = useLocation();
   const [driver, setDriver] = useState<Driver | null>(null);
   const [carregandoDriver, setCarregandoDriver] = useState(true);
   const [placa, setPlaca] = useState('');
@@ -40,6 +43,22 @@ export default function DriverHomeScreen() {
   const [carregando, setCarregando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
   const [processandoId, setProcessandoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status === 'offline' || !localizacao || !usuario) return;
+    const enviar = () => {
+      atualizarLocalizacaoDriver(
+        usuario.id,
+        localizacao.lat,
+        localizacao.lng
+      ).catch(() => {
+        // falha de rede é ignorada; a próxima tentativa corrige
+      });
+    };
+    enviar();
+    const timer = setInterval(enviar, 10000);
+    return () => clearInterval(timer);
+  }, [status, localizacao, usuario]);
 
   const sincronizarStatusLocal = useCallback((novo: DriverStatus) => {
     if (novo === 'offline') {

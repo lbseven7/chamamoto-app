@@ -27,8 +27,8 @@ export default function LoginScreen() {
     }
     setCarregando(true);
     cadastroOuLogin({ nome: nome.trim(), telefone: telefone.trim(), tipo })
-      .then(({ usuario }) => {
-        entrar(usuario);
+      .then(async ({ usuario }) => {
+        await entrar(usuario);
         router.replace(tipo === 'passageiro' ? '/(passenger)/home' : '/(driver)/home');
       })
       .catch((err: Error) => Alert.alert('Erro', err.message))

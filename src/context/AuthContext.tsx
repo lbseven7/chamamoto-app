@@ -1,27 +1,56 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   createContext,
+  useCallback,
   useContext,
+  useEffect,
   useState,
   type ReactNode,
 } from 'react';
 import type { User } from '../types';
 
+const STORAGE_KEY = 'chamamoto:usuario';
+
 interface AuthContextValue {
   usuario: User | null;
-  entrar: (u: User) => void;
-  sair: () => void;
+  carregando: boolean;
+  entrar: (u: User) => Promise<void>;
+  sair: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [usuario, setUsuario] = useState<User | null>(null);
+  const [carregando, setCarregando] = useState(true);
 
-  const entrar = (u: User) => setUsuario(u);
-  const sair = () => setUsuario(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const salvo = await AsyncStorage.getItem(STORAGE_KEY);
+        if (salvo) {
+          setUsuario(JSON.parse(salvo) as User);
+        }
+      } catch {
+        await AsyncStorage.removeItem(STORAGE_KEY);
+      } finally {
+        setCarregando(false);
+      }
+    })();
+  }, []);
+
+  const entrar = useCallback(async (u: User) => {
+    setUsuario(u);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(u));
+  }, []);
+
+  const sair = useCallback(async () => {
+    setUsuario(null);
+    await AsyncStorage.removeItem(STORAGE_KEY);
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ usuario, entrar, sair }}>
+    <AuthContext.Provider value={{ usuario, carregando, entrar, sair }}>
       {children}
     </AuthContext.Provider>
   );

@@ -11,13 +11,21 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuth } from '../../src/context/AuthContext';
-import { useLocation } from '../../src/hooks/useLocation';
+import { useLocation, type Localizacao } from '../../src/hooks/useLocation';
 import {
+  assinarDriver,
+  buscarDriver,
+  pararAssinaturaDriver,
+} from '../../src/services/drivers';
+import {
+  assinarCorrida,
   atualizarStatusCorrida,
   avaliarCorrida,
   buscarCorrida,
   criarCorrida,
+  pararAssinaturaCorrida,
 } from '../../src/services/rides';
 import type { Ride } from '../../src/types';
 import MapaCard from '../../src/components/MapaCard';
@@ -36,42 +44,80 @@ export default function PassengerHomeScreen() {
   const [nota, setNota] = useState(0);
   const [avaliando, setAvaliando] = useState(false);
   const [avaliada, setAvaliada] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [motoboyPos, setMotoboyPos] = useState<Localizacao | null>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const driverChannelRef = useRef<RealtimeChannel | null>(null);
 
-  const pararPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+  const pararAssinatura = useCallback(() => {
+    if (channelRef.current) {
+      pararAssinaturaCorrida(channelRef.current);
+      channelRef.current = null;
     }
   }, []);
 
-  useEffect(() => pararPolling, [pararPolling]);
+  const pararRastreio = useCallback(() => {
+    if (driverChannelRef.current) {
+      pararAssinaturaDriver(driverChannelRef.current);
+      driverChannelRef.current = null;
+    }
+    setMotoboyPos(null);
+  }, []);
+
+  useEffect(() => () => {
+    pararAssinatura();
+    pararRastreio();
+  }, [pararAssinatura, pararRastreio]);
+
+  const iniciarRastreio = useCallback(
+    (motoboyId: string) => {
+      pararRastreio();
+      buscarDriver(motoboyId)
+        .then((d) => {
+          if (d && d.lat != null && d.lng != null) {
+            setMotoboyPos({ lat: d.lat, lng: d.lng });
+          }
+        })
+        .catch(() => {
+          // sem driver/erro de rede: o marker aparece quando o motoboy enviar posição
+        });
+      driverChannelRef.current = assinarDriver(motoboyId, (d) => {
+        if (d.lat != null && d.lng != null) {
+          setMotoboyPos({ lat: d.lat, lng: d.lng });
+        }
+      });
+    },
+    [pararRastreio]
+  );
 
   const monitorarCorrida = useCallback(
     (id: string) => {
-      pararPolling();
-      const checar = async () => {
-        const r = await buscarCorrida(id);
-        if (!r) return;
+      pararAssinatura();
+      const aplicar = (r: Ride) => {
         setCorrida(r);
         if (r.status === 'solicitada') {
           setStage('searching');
+          setMotoboyPos(null);
         } else if (r.status === 'aceita' || r.status === 'em_andamento') {
           setStage('matched');
+          if (r.motoboy_id) iniciarRastreio(r.motoboy_id);
         } else if (r.status === 'concluida') {
           setStage('concluida');
-          pararPolling();
+          pararAssinatura();
+          pararRastreio();
         } else if (r.status === 'cancelada') {
           setStage('home');
-          pararPolling();
+          pararAssinatura();
+          pararRastreio();
           setCorridaId(null);
           setCorrida(null);
         }
       };
-      checar();
-      pollRef.current = setInterval(checar, 3000);
+      buscarCorrida(id).then((r) => {
+        if (r) aplicar(r);
+      });
+      channelRef.current = assinarCorrida(id, aplicar);
     },
-    [pararPolling]
+    [pararAssinatura, iniciarRastreio, pararRastreio]
   );
 
   const pedirCorrida = () => {
@@ -122,7 +168,8 @@ export default function PassengerHomeScreen() {
     setCancelando(true);
     atualizarStatusCorrida(corridaId, 'cancelada')
       .then(() => {
-        pararPolling();
+        pararAssinatura();
+        pararRastreio();
         setStage('home');
         setCorridaId(null);
         setCorrida(null);
@@ -132,7 +179,8 @@ export default function PassengerHomeScreen() {
   };
 
   const voltar = () => {
-    pararPolling();
+    pararAssinatura();
+    pararRastreio();
     setStage('home');
     setCorrida(null);
     setCorridaId(null);
@@ -202,23 +250,29 @@ export default function PassengerHomeScreen() {
       )}
 
       {stage === 'matched' && (
-        <View style={styles.card}>
-          <Text style={styles.label}>Motoboy a caminho!</Text>
-          <Text style={styles.status}>
-            {corrida?.status === 'em_andamento'
-              ? 'Corrida em andamento'
-              : 'Sua corrida foi aceita'}
-          </Text>
-          <Text style={styles.status}>Destino: {corrida?.destino_texto}</Text>
-          <TouchableOpacity
-            style={[styles.button, styles.cancelButton, cancelando && styles.buttonDisabled]}
-            onPress={cancelarCorrida}
-            disabled={cancelando}
-          >
-            <Text style={styles.buttonText}>
-              {cancelando ? 'Cancelando...' : 'Cancelar corrida'}
+        <View style={styles.content}>
+          <MapaCard origem={localizacao} motoboy={motoboyPos} />
+          <View style={styles.card}>
+            <Text style={styles.label}>Motoboy a caminho!</Text>
+            <Text style={styles.status}>
+              {corrida?.status === 'em_andamento'
+                ? 'Corrida em andamento'
+                : 'Sua corrida foi aceita'}
             </Text>
-          </TouchableOpacity>
+            <Text style={styles.status}>
+              {motoboyPos ? 'Moto rastreada no mapa' : 'Localizando motoboy...'}
+            </Text>
+            <Text style={styles.status}>Destino: {corrida?.destino_texto}</Text>
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton, cancelando && styles.buttonDisabled]}
+              onPress={cancelarCorrida}
+              disabled={cancelando}
+            >
+              <Text style={styles.buttonText}>
+                {cancelando ? 'Cancelando...' : 'Cancelar corrida'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 

@@ -5,9 +5,10 @@ import type { Localizacao } from '../hooks/useLocation';
 interface Props {
   origem: Localizacao | null;
   destino?: Localizacao | null;
+  motoboy?: Localizacao | null;
 }
 
-export default function MapaCard({ origem, destino }: Props) {
+export default function MapaCard({ origem, destino, motoboy }: Props) {
   if (!origem) {
     return <View style={styles.fallback} />;
   }
@@ -27,6 +28,13 @@ export default function MapaCard({ origem, destino }: Props) {
           coordinate={{ latitude: origem.lat, longitude: origem.lng }}
           title="Origem"
         />
+        {motoboy && (
+          <Marker
+            coordinate={{ latitude: motoboy.lat, longitude: motoboy.lng }}
+            title="Motoboy"
+            pinColor="#3B82F6"
+          />
+        )}
         {destino && (
           <Marker
             coordinate={{ latitude: destino.lat, longitude: destino.lng }}

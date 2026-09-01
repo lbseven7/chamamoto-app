@@ -32,6 +32,11 @@ create table rides (
   criado_em timestamp default now()
 );
 
+-- Realtime (postgres_changes): necessária para o app reagir às mudanças de status.
+-- Se já rodou o script antes, execute apenas a linha abaixo:
+alter publication supabase_realtime add table rides;
+alter publication supabase_realtime add table drivers;
+
 -- Comentar a linha abaixo para ativar RLS no futuro.
 -- Para o modelo por telefone (sem Supabase Auth), as tabelas ficam abertas
 -- via anon key. Em produção, ative RLS e use Supabase Auth.
