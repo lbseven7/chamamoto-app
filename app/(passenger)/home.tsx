@@ -15,6 +15,7 @@ import { useAuth } from '../../src/context/AuthContext';
 import { useLocation } from '../../src/hooks/useLocation';
 import {
   atualizarStatusCorrida,
+  avaliarCorrida,
   buscarCorrida,
   criarCorrida,
 } from '../../src/services/rides';
@@ -32,6 +33,9 @@ export default function PassengerHomeScreen() {
   const [destino, setDestino] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
+  const [nota, setNota] = useState(0);
+  const [avaliando, setAvaliando] = useState(false);
+  const [avaliada, setAvaliada] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const pararPolling = useCallback(() => {
@@ -89,10 +93,28 @@ export default function PassengerHomeScreen() {
     })
       .then((nova) => {
         setCorridaId(nova.id);
+        setNota(0);
+        setAvaliada(false);
         monitorarCorrida(nova.id);
       })
       .catch((err: Error) => Alert.alert('Erro', err.message))
       .finally(() => setEnviando(false));
+  };
+
+  const enviarAvaliacao = () => {
+    if (!corridaId) return;
+    if (nota < 1) {
+      Alert.alert('Atenção', 'Selecione uma nota de 1 a 5 estrelas.');
+      return;
+    }
+    setAvaliando(true);
+    avaliarCorrida(corridaId, nota)
+      .then(() => {
+        setAvaliada(true);
+        Alert.alert('Obrigado!', 'Avaliação enviada.');
+      })
+      .catch((err: Error) => Alert.alert('Erro', err.message))
+      .finally(() => setAvaliando(false));
   };
 
   const cancelarCorrida = () => {
@@ -203,10 +225,41 @@ export default function PassengerHomeScreen() {
       {stage === 'concluida' && (
         <View style={styles.card}>
           <Text style={styles.label}>Corrida concluída!</Text>
-          <Text style={styles.status}>Obrigado por usar o ChamaMoto.</Text>
-          <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={voltar}>
-            <Text style={styles.buttonText}>Fazer outra corrida</Text>
-          </TouchableOpacity>
+          {avaliada ? (
+            <>
+              <Text style={styles.status}>
+                Obrigado pela avaliação! Você avaliou {nota} estrelas.
+              </Text>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={voltar}
+              >
+                <Text style={styles.buttonText}>Fazer outra corrida</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={styles.status}>Avalie o motoboy:</Text>
+              <View style={styles.starsRow}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <TouchableOpacity key={n} onPress={() => setNota(n)}>
+                    <Text style={[styles.star, n <= nota && styles.starOn]}>
+                      {n <= nota ? '★' : '☆'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity
+                style={[styles.button, (avaliando || nota < 1) && styles.buttonDisabled]}
+                onPress={enviarAvaliacao}
+                disabled={avaliando || nota < 1}
+              >
+                <Text style={styles.buttonText}>
+                  {avaliando ? 'Enviando...' : 'Enviar avaliação'}
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
     </KeyboardAvoidingView>
@@ -271,6 +324,19 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 16,
     color: '#6B7280',
+  },
+  starsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginVertical: 16,
+  },
+  star: {
+    fontSize: 40,
+    color: '#D1D5DB',
+  },
+  starOn: {
+    color: '#F59E0B',
   },
   input: {
     backgroundColor: '#fff',

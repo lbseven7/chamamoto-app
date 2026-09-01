@@ -103,3 +103,60 @@ export async function listarCorridasDoMotoboy(
   }
   return (data ?? []) as RideComPassageiro[];
 }
+
+export async function avaliarCorrida(
+  rideId: string,
+  nota: number
+): Promise<void> {
+  const notaFinal = Math.max(1, Math.min(5, Math.round(nota)));
+
+  const { data: ride, error: erroRide } = await supabase
+    .from('rides')
+    .select('motoboy_id')
+    .eq('id', rideId)
+    .single();
+
+  if (erroRide) {
+    throw new Error(erroRide.message);
+  }
+  if (!ride.motoboy_id) {
+    throw new Error('Corrida sem motoboy associado.');
+  }
+
+  const { error: erroNota } = await supabase
+    .from('rides')
+    .update({ avaliacao: notaFinal })
+    .eq('id', rideId);
+
+  if (erroNota) {
+    throw new Error(erroNota.message);
+  }
+
+  const { data: avaliacoes, error: erroNotas } = await supabase
+    .from('rides')
+    .select('avaliacao')
+    .eq('motoboy_id', ride.motoboy_id)
+    .not('avaliacao', 'is', null);
+
+  if (erroNotas) {
+    throw new Error(erroNotas.message);
+  }
+
+  const notas = (avaliacoes ?? [])
+    .map((item) => item.avaliacao as number)
+    .filter((n) => typeof n === 'number' && n > 0);
+
+  const media =
+    notas.length > 0
+      ? Math.round((notas.reduce((soma, n) => soma + n, 0) / notas.length) * 10) / 10
+      : 5;
+
+  const { error: erroDriver } = await supabase
+    .from('drivers')
+    .update({ nota_media: media })
+    .eq('id', ride.motoboy_id);
+
+  if (erroDriver) {
+    throw new Error(erroDriver.message);
+  }
+}
