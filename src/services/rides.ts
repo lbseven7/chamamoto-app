@@ -7,6 +7,8 @@ export async function criarCorrida(dados: {
   origem_lat: number;
   origem_lng: number;
   destino_texto: string;
+  destino_lat: number;
+  destino_lng: number;
 }): Promise<Ride> {
   const { data, error } = await supabase
     .from('rides')
@@ -27,7 +29,7 @@ export interface RideComPassageiro extends Ride {
 export async function listarCorridasSolicitadas(): Promise<RideComPassageiro[]> {
   const { data, error } = await supabase
     .from('rides')
-    .select('*, passageiros (nome, telefone)')
+    .select('*, passageiros:passageiro_id (nome, telefone)')
     .eq('status', 'solicitada')
     .order('criado_em', { ascending: false });
 
@@ -94,7 +96,7 @@ export async function listarCorridasDoMotoboy(
 ): Promise<RideComPassageiro[]> {
   const { data, error } = await supabase
     .from('rides')
-    .select('*, passageiros (nome, telefone)')
+    .select('*, passageiros:passageiro_id (nome, telefone)')
     .eq('motoboy_id', motoboyId)
     .in('status', ['aceita', 'em_andamento'])
     .order('criado_em', { ascending: false });

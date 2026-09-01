@@ -25,6 +25,8 @@ export interface Ride {
   origem_lat: number;
   origem_lng: number;
   destino_texto: string;
+  destino_lat: number | null;
+  destino_lng: number | null;
   status:
     | 'solicitada'
     | 'aceita'

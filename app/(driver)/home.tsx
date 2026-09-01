@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useFocusEffect } from 'expo-router';
 import {
   Alert,
-  FlatList,
   RefreshControl,
   StyleSheet,
   Text,
@@ -27,8 +26,25 @@ import {
   type RideComPassageiro,
 } from '../../src/services/rides';
 import type { Driver } from '../../src/types';
+import MapaCard from '../../src/components/MapaCard';
 
-type Status = 'offline' | 'disponivel';
+/* ── Cores do protótipo ── */
+const C = {
+  navy: '#10233F',
+  navyLight: '#1D3A63',
+  orange: '#FF6A1A',
+  orangeDark: '#E85A0A',
+  yellow: '#FFB627',
+  bg: '#F1F2F5',
+  card: '#FFFFFF',
+  text: '#16202B',
+  muted: '#6B7480',
+  green: '#1C9A5B',
+  red: '#DC3B2E',
+  line: '#E4E6EA',
+};
+
+type DriverStage = 'idle' | 'incoming' | 'accepted' | 'trip' | 'completed';
 
 export default function DriverHomeScreen() {
   const { usuario, sair } = useAuth();
@@ -37,40 +53,46 @@ export default function DriverHomeScreen() {
   const [carregandoDriver, setCarregandoDriver] = useState(true);
   const [placa, setPlaca] = useState('');
   const [salvandoPlaca, setSalvandoPlaca] = useState(false);
-  const [status, setStatus] = useState<Status>('offline');
+  const [online, setOnline] = useState(false);
+  const [stage, setStage] = useState<DriverStage>('idle');
+  const [request, setRequest] = useState<RideComPassageiro | null>(null);
   const [corridas, setCorridas] = useState<RideComPassageiro[]>([]);
   const [ativas, setAtivas] = useState<RideComPassageiro[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [atualizando, setAtualizando] = useState(false);
   const [processandoId, setProcessandoId] = useState<string | null>(null);
+  const [earnings, setEarnings] = useState(0);
+  const [trips, setTrips] = useState(0);
+  const [tripSeconds, setTripSeconds] = useState(0);
+
+  const mm = String(Math.floor(tripSeconds / 60)).padStart(2, '0');
+  const ss = String(tripSeconds % 60).padStart(2, '0');
 
   useEffect(() => {
-    if (status === 'offline' || !localizacao || !usuario) return;
+    if (!online || !localizacao || !usuario) return;
     const enviar = () => {
-      atualizarLocalizacaoDriver(
-        usuario.id,
-        localizacao.lat,
-        localizacao.lng
-      ).catch(() => {
-        // falha de rede é ignorada; a próxima tentativa corrige
-      });
+      atualizarLocalizacaoDriver(usuario.id, localizacao.lat, localizacao.lng).catch(() => {});
     };
     enviar();
     const timer = setInterval(enviar, 10000);
     return () => clearInterval(timer);
-  }, [status, localizacao, usuario]);
+  }, [online, localizacao, usuario]);
+
+  // trip timer
+  useEffect(() => {
+    if (stage === 'trip') {
+      setTripSeconds(0);
+      const id = setInterval(() => setTripSeconds((s) => s + 1), 1000);
+      return () => clearInterval(id);
+    }
+  }, [stage]);
 
   const sincronizarStatusLocal = useCallback((novo: DriverStatus) => {
-    if (novo === 'offline') {
-      setStatus('offline');
-    } else {
-      setStatus('disponivel');
-    }
     setDriver((atual) => (atual ? { ...atual, status: novo } : atual));
   }, []);
 
   const buscarCorridas = useCallback(async () => {
-    if (!usuario || status !== 'disponivel') return;
+    if (!usuario || !online) return;
     try {
       const [lista, ativasLista] = await Promise.all([
         listarCorridasSolicitadas(),
@@ -84,7 +106,7 @@ export default function DriverHomeScreen() {
       setCarregando(false);
       setAtualizando(false);
     }
-  }, [usuario, status]);
+  }, [usuario, online]);
 
   useFocusEffect(
     useCallback(() => {
@@ -95,21 +117,17 @@ export default function DriverHomeScreen() {
           const d = await buscarDriver(usuario.id);
           if (!ativo) return;
           setDriver(d);
-          setStatus(d?.status === 'offline' ? 'offline' : 'disponivel');
+          setOnline(d?.status !== 'offline');
         } catch (err) {
           if (ativo) Alert.alert('Erro', (err as Error).message);
         } finally {
           if (ativo) setCarregandoDriver(false);
         }
       })();
-      if (status === 'disponivel') {
-        setCarregando(true);
-        buscarCorridas();
-      }
       return () => {
         ativo = false;
       };
-    }, [usuario, status, buscarCorridas])
+    }, [usuario])
   );
 
   const salvarPlaca = async () => {
@@ -129,33 +147,38 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const toggleStatus = async () => {
+  const toggleOnline = async () => {
     if (!usuario) return;
-    const novo: DriverStatus = status === 'offline' ? 'disponivel' : 'offline';
+    const novo = !online;
+    const status: DriverStatus = novo ? 'disponivel' : 'offline';
     try {
-      await atualizarStatusDriver(usuario.id, novo);
-      sincronizarStatusLocal(novo);
-      if (novo === 'offline') {
-        setCorridas([]);
-        setAtivas([]);
-      } else {
+      await atualizarStatusDriver(usuario.id, status);
+      setOnline(novo);
+      setStage('idle');
+      setRequest(null);
+      sincronizarStatusLocal(status);
+      if (novo) {
         setCarregando(true);
         buscarCorridas();
+      } else {
+        setCorridas([]);
+        setAtivas([]);
       }
     } catch (err) {
       Alert.alert('Erro', (err as Error).message);
     }
   };
 
-  const aceitar = async (ride: RideComPassageiro) => {
+  const acceptRequest = async (ride: RideComPassageiro) => {
     if (!usuario) return;
     setProcessandoId(ride.id);
     try {
       await aceitarCorrida(ride.id, usuario.id);
       await atualizarStatusDriver(usuario.id, 'em_corrida');
       sincronizarStatusLocal('em_corrida');
+      setRequest(ride);
+      setStage('accepted');
       Alert.alert('Feito!', 'Corrida aceita.');
-      buscarCorridas();
     } catch (err) {
       Alert.alert('Erro', (err as Error).message);
     } finally {
@@ -163,39 +186,47 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const mudarStatus = async (
-    ride: RideComPassageiro,
-    novoStatus: 'em_andamento' | 'concluida' | 'cancelada'
-  ) => {
-    if (!usuario) return;
-    setProcessandoId(ride.id);
+  const startTrip = async () => {
+    if (!request || !usuario) return;
+    setProcessandoId(request.id);
     try {
-      await atualizarStatusCorrida(ride.id, novoStatus);
-      await atualizarStatusDriver(
-        usuario.id,
-        novoStatus === 'concluida' || novoStatus === 'cancelada'
-          ? 'disponivel'
-          : 'em_corrida'
-      );
-      sincronizarStatusLocal(
-        novoStatus === 'concluida' || novoStatus === 'cancelada'
-          ? 'disponivel'
-          : 'em_corrida'
-      );
-      Alert.alert(
-        'Atualizado',
-        novoStatus === 'em_andamento'
-          ? 'Corrida em andamento.'
-          : novoStatus === 'concluida'
-          ? 'Corrida concluída.'
-          : 'Corrida cancelada.'
-      );
-      buscarCorridas();
+      await atualizarStatusCorrida(request.id, 'em_andamento');
+      setStage('trip');
     } catch (err) {
       Alert.alert('Erro', (err as Error).message);
     } finally {
       setProcessandoId(null);
     }
+  };
+
+  const finishTrip = async () => {
+    if (!request || !usuario) return;
+    setProcessandoId(request.id);
+    try {
+      await atualizarStatusCorrida(request.id, 'concluida');
+      await atualizarStatusDriver(usuario.id, 'disponivel');
+      sincronizarStatusLocal('disponivel');
+      setTrips((t) => t + 1);
+      setStage('completed');
+    } catch (err) {
+      Alert.alert('Erro', (err as Error).message);
+    } finally {
+      setProcessandoId(null);
+    }
+  };
+
+  const lastPrice = request?.avaliacao != null ? `R$ ${(request.avaliacao * 2).toFixed(2).replace('.', ',')}` : '';
+
+  const goToIdle = () => {
+    setStage('idle');
+    setRequest(null);
+    setTripSeconds(0);
+    buscarCorridas();
+  };
+
+  const declineRequest = () => {
+    setStage('idle');
+    setRequest(null);
   };
 
   if (carregandoDriver) {
@@ -210,27 +241,29 @@ export default function DriverHomeScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Olá, {usuario?.nome}</Text>
-          <Link href="/login" onPress={sair} style={styles.sair}>
+          <View>
+            <Text style={styles.hello}>Olá, {usuario?.nome}</Text>
+          </View>
+          <Link href="/login" onPress={sair}>
             <Text style={styles.sairText}>Sair</Text>
           </Link>
         </View>
         <View style={styles.card}>
-          <Text style={styles.label}>Cadastre sua moto para começar</Text>
+          <Text style={styles.h2}>Cadastre sua moto para começar</Text>
           <TextInput
             style={styles.input}
             placeholder="Placa (ex.: ABC1D23)"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={C.muted}
             value={placa}
             onChangeText={setPlaca}
             autoCapitalize="characters"
           />
           <TouchableOpacity
-            style={[styles.aceitar, salvandoPlaca && styles.aceitarDisabled]}
+            style={[styles.cta, salvandoPlaca && styles.ctaDisabled]}
             onPress={salvarPlaca}
             disabled={salvandoPlaca}
           >
-            <Text style={styles.aceitarText}>
+            <Text style={styles.ctaText}>
               {salvandoPlaca ? 'Salvando...' : 'Cadastrar moto'}
             </Text>
           </TouchableOpacity>
@@ -241,209 +274,320 @@ export default function DriverHomeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.title}>Olá, {usuario?.nome}</Text>
-        <Link href="/login" onPress={sair} style={styles.sair}>
-          <Text style={styles.sairText}>Sair</Text>
-        </Link>
+        <View>
+          <Text style={styles.hello}>Olá, {usuario?.nome}</Text>
+          <Text style={styles.mutedSmall}>
+            {trips} {trips === 1 ? 'corrida hoje' : 'corridas hoje'} • R$ {earnings.toFixed(2).replace('.', ',')}
+          </Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Link href="/login" onPress={sair}>
+            <Text style={styles.sairText}>Sair</Text>
+          </Link>
+          <TouchableOpacity
+            style={[styles.toggle, online && styles.toggleOn]}
+            onPress={toggleOnline}
+          >
+            <View style={[styles.toggleKnob, online && styles.toggleKnobOn]} />
+          </TouchableOpacity>
+        </View>
+      </View>
+      <View style={styles.onlineLabel}>
+        <View style={[styles.dot, online ? styles.dotGreen : styles.dotGrey]} />
+        <Text style={styles.mutedSmall}>
+          {online ? 'Online — recebendo corridas' : 'Offline'}
+        </Text>
       </View>
 
-      <Text style={styles.subtitle}>Painel do MotoBoy</Text>
-      <Text style={styles.infoMoto}>
-        Moto {driver.placa_moto ?? '—'} • Nota {driver.nota_media?.toFixed(1) ?? '—'}
-      </Text>
-      <TouchableOpacity
-        style={[styles.statusButton, status === 'offline' ? styles.online : styles.offline]}
-        onPress={toggleStatus}
-      >
-        <Text style={styles.statusButtonText}>
-          {status === 'offline' ? 'Ficar disponível' : 'Ficar offline'}
-        </Text>
-      </TouchableOpacity>
-
-      {status === 'disponivel' && (
-        <FlatList
-          data={corridas}
-          keyExtractor={(item) => item.id}
-          style={styles.lista}
-          contentContainerStyle={styles.listaContent}
-          refreshControl={
-            <RefreshControl
-              refreshing={atualizando}
-              onRefresh={() => {
-                setAtualizando(true);
-                buscarCorridas();
-              }}
-            />
-          }
-          ListHeaderComponent={
-            ativas.length > 0 ? (
-              <View>
-                <Text style={styles.sectionTitle}>Corridas em andamento</Text>
-                {ativas.map((item) => (
-                  <View key={item.id} style={styles.card}>
-                    <Text style={styles.cardDestino}>{item.destino_texto}</Text>
-                    <Text style={styles.cardInfo}>
-                      Passageiro: {item.passageiros?.nome ?? '—'}
-                    </Text>
-                    <Text style={styles.cardInfo}>
-                      Telefone: {item.passageiros?.telefone ?? '—'}
-                    </Text>
-                    <TouchableOpacity
-                      style={[styles.aceitar, processandoId === item.id && styles.aceitarDisabled]}
-                      onPress={() => mudarStatus(item, 'em_andamento')}
-                      disabled={processandoId === item.id || item.status === 'em_andamento'}
-                    >
-                      <Text style={styles.aceitarText}>
-                        {item.status === 'em_andamento'
-                          ? 'Em andamento'
-                          : processandoId === item.id
-                          ? 'Atualizando...'
-                          : 'Iniciar corrida'}
+      {/* ── IDLE ── */}
+      {stage === 'idle' && (
+        <View style={styles.centerStage}>
+          {online ? (
+            <>
+              <View style={styles.pulse}>
+                <Text style={{ fontSize: 24 }}>📡</Text>
+              </View>
+              <Text style={[styles.muted, { marginTop: 16 }]}>
+                Aguardando novos pedidos...
+              </Text>
+              {ativas.length > 0 && (
+                <View style={{ marginTop: 20, width: '100%' }}>
+                  <Text style={styles.sectionTitle}>Corridas em andamento</Text>
+                  {ativas.map((item) => (
+                    <View key={item.id} style={styles.card}>
+                      <Text style={styles.cardDestino}>{item.destino_texto}</Text>
+                      <Text style={styles.mutedSmall}>
+                        Passageiro: {item.passageiros?.nome ?? '—'}
                       </Text>
-                    </TouchableOpacity>
-                    <View style={styles.row}>
+                      <View style={styles.row}>
+                        <TouchableOpacity
+                          style={[styles.ctaGreen, { flex: 1 }]}
+                          onPress={async () => {
+                            setRequest(item);
+                            setStage('trip');
+                          }}
+                        >
+                          <Text style={styles.ctaText}>Iniciar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.ctaRed, { flex: 1 }]}
+                          onPress={async () => {
+                            if (!usuario) return;
+                            try {
+                              await atualizarStatusCorrida(item.id, 'cancelada');
+                              await atualizarStatusDriver(usuario.id, 'disponivel');
+                              sincronizarStatusLocal('disponivel');
+                              buscarCorridas();
+                            } catch {}
+                          }}
+                        >
+                          <Text style={styles.ctaText}>Cancelar</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {corridas.length > 0 && (
+                <View style={{ marginTop: 20, width: '100%' }}>
+                  <Text style={styles.sectionTitle}>Corridas disponíveis</Text>
+                  {corridas.map((item) => (
+                    <View key={item.id} style={styles.card}>
+                      <Text style={styles.cardDestino}>{item.destino_texto}</Text>
+                      <Text style={styles.mutedSmall}>
+                        Passageiro: {item.passageiros?.nome ?? '—'}
+                      </Text>
+                      <Text style={styles.mutedSmall}>
+                        Telefone: {item.passageiros?.telefone ?? '—'}
+                      </Text>
                       <TouchableOpacity
-                        style={[styles.action, styles.concluir, processandoId === item.id && styles.aceitarDisabled]}
-                        onPress={() => mudarStatus(item, 'concluida')}
+                        style={[styles.cta, { marginTop: 12 }, processandoId === item.id && styles.ctaDisabled]}
+                        onPress={() => acceptRequest(item)}
                         disabled={processandoId === item.id}
                       >
-                        <Text style={styles.actionText}>Concluir</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.action, styles.cancelar, processandoId === item.id && styles.aceitarDisabled]}
-                        onPress={() => mudarStatus(item, 'cancelada')}
-                        disabled={processandoId === item.id}
-                      >
-                        <Text style={styles.actionText}>Cancelar</Text>
+                        <Text style={styles.ctaText}>
+                          {processandoId === item.id ? 'Aceitando...' : 'Aceitar corrida'}
+                        </Text>
                       </TouchableOpacity>
                     </View>
-                  </View>
-                ))}
-                <Text style={styles.sectionTitle}>Corridas disponíveis</Text>
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <Text style={styles.vazio}>
-              {carregando ? 'Buscando corridas...' : 'Nenhuma corrida no momento.'}
-            </Text>
-          }
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.cardDestino}>{item.destino_texto}</Text>
-              <Text style={styles.cardInfo}>
-                Passageiro: {item.passageiros?.nome ?? '—'}
-              </Text>
-              <Text style={styles.cardInfo}>
-                Telefone: {item.passageiros?.telefone ?? '—'}
-              </Text>
-              <TouchableOpacity
-                style={[
-                  styles.aceitar,
-                  (processandoId === item.id || ativas.length > 0) && styles.aceitarDisabled,
-                ]}
-                onPress={() => aceitar(item)}
-                disabled={processandoId === item.id || ativas.length > 0}
-              >
-                <Text style={styles.aceitarText}>
-                  {processandoId === item.id
-                    ? 'Aceitando...'
-                    : ativas.length > 0
-                    ? 'Corrida em andamento'
-                    : 'Aceitar corrida'}
+                  ))}
+                </View>
+              )}
+              {ativas.length === 0 && corridas.length === 0 && !carregando && (
+                <Text style={[styles.muted, { marginTop: 10 }]}>
+                  Nenhuma corrida no momento.
                 </Text>
-              </TouchableOpacity>
-            </View>
+              )}
+            </>
+          ) : (
+            <>
+              <Text style={{ fontSize: 40 }}>💤</Text>
+              <Text style={[styles.muted, { marginTop: 10 }]}>
+                Fique online para começar a receber corridas
+              </Text>
+            </>
           )}
-        />
+        </View>
+      )}
+
+      {/* ── INCOMING ── */}
+      {stage === 'incoming' && request && (
+        <View style={styles.requestCard}>
+          <View style={styles.requestBadge}>
+            <Text style={styles.requestBadgeText}>Nova corrida</Text>
+          </View>
+          <View style={{ height: 180, borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
+            <MapaCard
+              origem={localizacao}
+              destino={
+                request.origem_lat && request.origem_lng
+                  ? { lat: request.origem_lat, lng: request.origem_lng }
+                  : undefined
+              }
+              pickupLabel="Você"
+              destLabel={request.destino_texto}
+            />
+          </View>
+          <Text style={styles.cardDestino}>{request.destino_texto}</Text>
+          <Text style={styles.mutedSmall}>
+            Passageiro: {request.passageiros?.nome ?? '—'}
+          </Text>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity style={[styles.secondaryBtn, styles.declineBtn]} onPress={declineRequest}>
+              <Text style={[styles.secondaryBtnText, { color: C.red }]}>Recusar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cta}
+              onPress={() => acceptRequest(request)}
+            >
+              <Text style={styles.ctaText}>Aceitar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ── ACCEPTED ── */}
+      {stage === 'accepted' && request && (
+        <>
+<View style={styles.mapContainer}>
+          <MapaCard
+            origem={localizacao}
+            destino={
+              request.origem_lat && request.origem_lng
+                ? { lat: request.origem_lat, lng: request.origem_lng }
+                : undefined
+            }
+          />
+        </View>
+        <View style={styles.panel}>
+          <Text style={[styles.muted, { textAlign: 'center', marginBottom: 12 }]}>
+            Vá até o ponto de partida do passageiro
+          </Text>
+            <Text style={[styles.mutedSmall, { textAlign: 'center', marginBottom: 14 }]}>
+              {request.passageiros?.nome ?? 'Passageiro'}
+            </Text>
+            <TouchableOpacity
+              style={styles.cta}
+              onPress={startTrip}
+              disabled={processandoId === request.id}
+            >
+              <Text style={styles.ctaText}>
+                {processandoId === request.id ? 'Atualizando...' : 'Iniciar corrida'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {/* ── TRIP (driver) ── */}
+      {stage === 'trip' && request && (
+        <>
+<View style={styles.mapContainer}>
+            <MapaCard
+              origem={
+                request.origem_lat && request.origem_lng
+                  ? { lat: request.origem_lat, lng: request.origem_lng }
+                  : localizacao
+              }
+              destino={
+                request.destino_lat && request.destino_lng
+                  ? { lat: request.destino_lat, lng: request.destino_lng }
+                  : undefined
+              }
+            />
+          </View>
+          <View style={styles.panel}>
+            <Text style={styles.tripTimer}>{mm}:{ss}</Text>
+            <Text style={[styles.muted, { textAlign: 'center' }]}>
+              Levando passageiro até {request.destino_texto}
+            </Text>
+            <TouchableOpacity
+              style={styles.ctaDark}
+              onPress={finishTrip}
+              disabled={processandoId === request.id}
+            >
+              <Text style={styles.ctaText}>
+                {processandoId === request.id ? 'Finalizando...' : 'Finalizar corrida'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {/* ── COMPLETED ── */}
+      {stage === 'completed' && (
+        <View style={styles.centerStage}>
+          <View style={styles.check}>
+            <Text style={styles.checkText}>✓</Text>
+          </View>
+          <Text style={styles.h2}>Corrida concluída</Text>
+          <Text style={styles.muted}>Você completou uma corrida{lastPrice ? ` — ${lastPrice}` : ''}</Text>
+          <TouchableOpacity style={[styles.cta, { marginTop: 18 }]} onPress={goToIdle}>
+            <Text style={styles.ctaText}>Voltar a ficar disponível</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* ── Placa do carro ── */}
+      {driver && (
+        <View style={styles.footerInfo}>
+          <Text style={styles.mutedSmall}>
+            Moto {driver.placa_moto ?? '—'} • Nota {driver.nota_media?.toFixed(1) ?? '—'}
+          </Text>
+        </View>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    padding: 24,
-  },
+  container: { flex: 1, backgroundColor: C.bg },
   header: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingTop: 44,
+    paddingBottom: 6,
+  },
+  hello: { fontSize: 18, fontWeight: '800', color: C.text },
+  sairText: { color: C.red, fontWeight: '600', fontSize: 14 },
+  muted: { color: C.muted, fontSize: 13 },
+  mutedSmall: { color: C.muted, fontSize: 12 },
+  onlineLabel: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    gap: 7,
+    paddingHorizontal: 18,
+    paddingBottom: 14,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#111827',
+
+  toggle: {
+    width: 52,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: '#D8DCE2',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
   },
-  sair: {
-    padding: 8,
-  },
-  sairText: {
-    color: '#EF4444',
-    fontWeight: '600',
-  },
-  subtitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  statusButton: {
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  online: {
-    backgroundColor: '#10B981',
-  },
-  offline: {
-    backgroundColor: '#EF4444',
-  },
-  statusButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  infoMoto: {
-    textAlign: 'center',
-    color: '#6B7280',
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#374151',
-    marginBottom: 12,
-  },
-  input: {
+  toggleOn: { backgroundColor: C.green },
+  toggleKnob: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  lista: {
+  toggleKnobOn: { alignSelf: 'flex-end' },
+
+  dot: { width: 7, height: 7, borderRadius: 4 },
+  dotGreen: { backgroundColor: C.green },
+  dotGrey: { backgroundColor: '#9AA1AC' },
+
+  centerStage: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 26,
   },
-  listaContent: {
-    paddingBottom: 24,
+
+  pulse: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: C.navy,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  vazio: {
-    textAlign: 'center',
-    color: '#6B7280',
-    marginTop: 32,
-  },
+
   card: {
-    backgroundColor: '#F9FAFB',
+    backgroundColor: C.card,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -451,56 +595,128 @@ const styles = StyleSheet.create({
   cardDestino: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#111827',
+    color: C.text,
     marginBottom: 6,
-  },
-  cardInfo: {
-    fontSize: 15,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  aceitar: {
-    backgroundColor: '#F59E0B',
-    padding: 14,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  aceitarDisabled: {
-    opacity: 0.6,
-  },
-  aceitarText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#111827',
-    marginTop: 8,
+    color: C.text,
     marginBottom: 12,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
-  },
-  action: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
+
+  cta: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 15,
+    backgroundColor: C.orange,
     alignItems: 'center',
   },
-  concluir: {
-    backgroundColor: '#10B981',
+  ctaDark: {
+    width: '100%',
+    borderRadius: 16,
+    padding: 15,
+    backgroundColor: C.navy,
+    alignItems: 'center',
   },
-  cancelar: {
-    backgroundColor: '#EF4444',
+  ctaGreen: {
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: C.green,
+    alignItems: 'center',
   },
-  actionText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: 'bold',
+  ctaRed: {
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: C.red,
+    alignItems: 'center',
+  },
+  ctaDisabled: { opacity: 0.45 },
+  ctaText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+
+  secondaryBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: C.line,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 12,
+    alignItems: 'center',
+  },
+  declineBtn: { borderColor: C.red },
+  secondaryBtnText: { fontSize: 13.5, fontWeight: '600', color: C.text },
+  actionsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+
+  input: {
+    borderWidth: 1.5,
+    borderColor: C.line,
+    borderRadius: 14,
+    padding: 13,
+    fontSize: 16,
+    color: C.text,
+    marginBottom: 16,
+    backgroundColor: '#fff',
+  },
+
+  h2: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: C.text,
+    marginBottom: 12,
+  },
+
+  vazio: { textAlign: 'center', color: C.muted, marginTop: 32 },
+
+  mapContainer: { height: 250, width: '100%', flexShrink: 0 },
+  panel: {
+    backgroundColor: C.card,
+    borderRadius: 22,
+    marginTop: -18,
+    paddingHorizontal: 18,
+    paddingTop: 20,
+    paddingBottom: 22,
+    flex: 1,
+    shadowColor: C.navy,
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.06,
+    shadowRadius: 24,
+    elevation: 4,
+  },
+
+  requestCard: { padding: 16 },
+  requestBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: C.orange,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginBottom: 10,
+  },
+  requestBadgeText: { color: '#fff', fontSize: 11.5, fontWeight: '700' },
+
+  tripTimer: {
+    fontSize: 34,
+    fontWeight: '800',
+    textAlign: 'center',
+    color: C.navy,
+    marginVertical: 6,
+  },
+
+  check: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: C.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  checkText: { color: '#fff', fontSize: 26 },
+
+  row: { flexDirection: 'row', gap: 12, marginTop: 12 },
+
+  footerInfo: {
+    paddingVertical: 10,
+    alignItems: 'center',
   },
 });
