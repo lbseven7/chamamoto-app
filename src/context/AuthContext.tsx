@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { User } from '../types';
+import { encerrarSessao, obterUsuarioSessao } from '../services/auth';
 
 const STORAGE_KEY = 'chamamoto:usuario';
 
@@ -27,9 +28,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     (async () => {
       try {
-        const salvo = await AsyncStorage.getItem(STORAGE_KEY);
-        if (salvo) {
-          setUsuario(JSON.parse(salvo) as User);
+        const usuarioSessao = await obterUsuarioSessao();
+        if (usuarioSessao) {
+          setUsuario(usuarioSessao);
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(usuarioSessao));
+        } else {
+          await AsyncStorage.removeItem(STORAGE_KEY);
         }
       } catch {
         await AsyncStorage.removeItem(STORAGE_KEY);
@@ -47,6 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sair = useCallback(async () => {
     setUsuario(null);
     await AsyncStorage.removeItem(STORAGE_KEY);
+    try {
+      await encerrarSessao();
+    } catch {
+      // ignora falha no signOut do Supabase
+    }
   }, []);
 
   return (
