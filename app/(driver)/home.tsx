@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useFocusEffect } from 'expo-router';
 import {
   Alert,
-  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { useAuth } from '../../src/context/AuthContext';
 import { useLocation } from '../../src/hooks/useLocation';
 import {
@@ -20,12 +20,17 @@ import {
 } from '../../src/services/drivers';
 import {
   aceitarCorrida,
+  assinarCorrida,
+  assinarNovasCorridas,
   atualizarStatusCorrida,
+  buscarCorrida,
   listarCorridasDoMotoboy,
   listarCorridasSolicitadas,
+  pararAssinaturaCorrida,
+  pararAssinaturaNovasCorridas,
   type RideComPassageiro,
 } from '../../src/services/rides';
-import type { Driver } from '../../src/types';
+import type { Driver, Ride } from '../../src/types';
 import MapaCard from '../../src/components/MapaCard';
 
 /* ── Cores do protótipo ── */
@@ -64,9 +69,21 @@ export default function DriverHomeScreen() {
   const [earnings, setEarnings] = useState(0);
   const [trips, setTrips] = useState(0);
   const [tripSeconds, setTripSeconds] = useState(0);
+  const stageRef = useRef<DriverStage>('idle');
+  const requestIdRef = useRef<string | null>(null);
+  const novasCorridasRef = useRef<RealtimeChannel | null>(null);
+  const requestChannelRef = useRef<RealtimeChannel | null>(null);
 
   const mm = String(Math.floor(tripSeconds / 60)).padStart(2, '0');
   const ss = String(tripSeconds % 60).padStart(2, '0');
+
+  useEffect(() => {
+    stageRef.current = stage;
+  }, [stage]);
+
+  useEffect(() => {
+    requestIdRef.current = request?.id ?? null;
+  }, [request]);
 
   useEffect(() => {
     if (!online || !localizacao || !usuario) return;
@@ -107,6 +124,85 @@ export default function DriverHomeScreen() {
       setAtualizando(false);
     }
   }, [usuario, online]);
+
+  const pararAssinaturaDeNovas = useCallback(() => {
+    if (novasCorridasRef.current) {
+      pararAssinaturaNovasCorridas(novasCorridasRef.current);
+      novasCorridasRef.current = null;
+    }
+  }, []);
+
+  const pararAssinaturaDoPedido = useCallback(() => {
+    if (requestChannelRef.current) {
+      pararAssinaturaCorrida(requestChannelRef.current);
+      requestChannelRef.current = null;
+    }
+  }, []);
+
+  const aplicarPedido = useCallback(
+    (atual: Ride) => {
+      if (
+        atual.status === 'cancelada' ||
+        (atual.status === 'aceita' && atual.motoboy_id !== usuario?.id)
+      ) {
+        pararAssinaturaDoPedido();
+        setRequest(null);
+        setStage('idle');
+        buscarCorridas();
+      }
+    },
+    [usuario?.id, pararAssinaturaDoPedido, buscarCorridas]
+  );
+
+  // Assina novas corridas + reconciliação periódica enquanto online
+  useEffect(() => {
+    if (!usuario || !online) return;
+
+    novasCorridasRef.current = assinarNovasCorridas((ride) => {
+      setCorridas((anteriores) => {
+        if (anteriores.some((r) => r.id === ride.id)) return anteriores;
+        return [ride, ...anteriores];
+      });
+      if (stageRef.current === 'idle') {
+        setRequest(ride);
+        setStage('incoming');
+      }
+    });
+
+    const timer = setInterval(() => {
+      (async () => {
+        const rid = requestIdRef.current;
+        if (rid) {
+          const atual = await buscarCorrida(rid).catch(() => null);
+          const sumiu =
+            !atual ||
+            atual.status === 'cancelada' ||
+            (atual.status === 'aceita' && atual.motoboy_id !== usuario?.id);
+          if (sumiu) {
+            aplicarPedido(atual ?? ({ id: rid, status: 'cancelada' } as Ride));
+            return;
+          }
+        }
+        if (stageRef.current === 'idle') buscarCorridas();
+      })();
+    }, 30000);
+
+    return () => {
+      clearInterval(timer);
+      pararAssinaturaDeNovas();
+    };
+  }, [usuario, online, buscarCorridas, pararAssinaturaDeNovas, aplicarPedido]);
+
+  // Mantém assinatura do pedido ativo durante os estágios de corrida
+  useEffect(() => {
+    if (!request || stage === 'idle' || stage === 'completed') {
+      pararAssinaturaDoPedido();
+      return;
+    }
+    pararAssinaturaDoPedido();
+    requestChannelRef.current = assinarCorrida(request.id, aplicarPedido);
+    return () => pararAssinaturaDoPedido();
+  }, [request, stage, aplicarPedido, pararAssinaturaDoPedido]);
 
   useFocusEffect(
     useCallback(() => {
@@ -181,6 +277,10 @@ export default function DriverHomeScreen() {
       Alert.alert('Feito!', 'Corrida aceita.');
     } catch (err) {
       Alert.alert('Erro', (err as Error).message);
+      pararAssinaturaDoPedido();
+      setRequest(null);
+      setStage('idle');
+      buscarCorridas();
     } finally {
       setProcessandoId(null);
     }
@@ -227,6 +327,7 @@ export default function DriverHomeScreen() {
   const declineRequest = () => {
     setStage('idle');
     setRequest(null);
+    buscarCorridas();
   };
 
   if (carregandoDriver) {
@@ -667,7 +768,7 @@ const styles = StyleSheet.create({
 
   vazio: { textAlign: 'center', color: C.muted, marginTop: 32 },
 
-  mapContainer: { height: 250, width: '100%', flexShrink: 0 },
+  mapContainer: { height: 340, width: '100%', flexShrink: 0 },
   panel: {
     backgroundColor: C.card,
     borderRadius: 22,

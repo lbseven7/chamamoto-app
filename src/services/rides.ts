@@ -43,17 +43,21 @@ export async function aceitarCorrida(
   rideId: string,
   motoboyId: string
 ): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('rides')
     .update({
       status: 'aceita',
       motoboy_id: motoboyId,
     })
     .eq('id', rideId)
-    .eq('status', 'solicitada');
+    .eq('status', 'solicitada')
+    .select('id');
 
   if (error) {
     throw new Error(error.message);
+  }
+  if (!data || data.length === 0) {
+    throw new Error('Essa corrida já foi aceita por outro motoboy.');
   }
 }
 
@@ -89,6 +93,21 @@ export async function buscarCorrida(rideId: string): Promise<Ride | null> {
     return null;
   }
   return data as Ride;
+}
+
+export async function buscarCorridaComPassageiro(
+  rideId: string
+): Promise<RideComPassageiro | null> {
+  const { data, error } = await supabase
+    .from('rides')
+    .select('*, passageiros:passageiro_id (nome, telefone)')
+    .eq('id', rideId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data as RideComPassageiro | null;
 }
 
 export async function listarCorridasDoMotoboy(
@@ -185,5 +204,35 @@ export function assinarCorrida(
 }
 
 export function pararAssinaturaCorrida(channel: RealtimeChannel): void {
+  supabase.removeChannel(channel);
+}
+
+export function assinarNovasCorridas(
+  aoNova: (ride: RideComPassageiro) => void
+): RealtimeChannel {
+  const channel = supabase
+    .channel('novas-corridas')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'rides',
+        filter: 'status=eq.solicitada',
+      },
+      (payload) => {
+        const id = (payload.new as Ride).id;
+        buscarCorridaComPassageiro(id)
+          .then((ride) => {
+            if (ride && ride.status === 'solicitada') aoNova(ride);
+          })
+          .catch(() => {});
+      }
+    )
+    .subscribe();
+  return channel;
+}
+
+export function pararAssinaturaNovasCorridas(channel: RealtimeChannel): void {
   supabase.removeChannel(channel);
 }
