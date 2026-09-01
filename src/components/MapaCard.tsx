@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import type { Localizacao } from '../hooks/useLocation';
+import type { Rota } from '../services/rotas';
 
 const C = {
   navy: '#10233F',
@@ -8,12 +9,11 @@ const C = {
   green: '#1C9A5B',
 };
 
-
-
 interface Props {
   origem: Localizacao | null;
   destino?: Localizacao | null;
   motoboy?: Localizacao | null;
+  rota?: Rota | null;
   pickupLabel?: string;
   destLabel?: string;
 }
@@ -22,6 +22,7 @@ export default function MapaCard({
   origem,
   destino,
   motoboy,
+  rota,
   pickupLabel,
   destLabel,
 }: Props) {
@@ -32,6 +33,7 @@ export default function MapaCard({
   const pontos = [origem];
   if (destino) pontos.push(destino);
   if (motoboy) pontos.push(motoboy);
+  if (rota?.pontos?.length) pontos.push(...rota.pontos);
 
   const lats = pontos.map((p) => p.lat);
   const lngs = pontos.map((p) => p.lng);
@@ -89,6 +91,16 @@ export default function MapaCard({
             pinColor={C.red}
           />
         )}
+        {rota?.pontos && rota.pontos.length > 0 && (
+          <Polyline
+            coordinates={rota.pontos.map((p) => ({
+              latitude: p.lat,
+              longitude: p.lng,
+            }))}
+            strokeColor={C.navy}
+            strokeWidth={4.5}
+          />
+        )}
       </MapView>
 
       {/* ── Labels sobre o mapa ── */}
@@ -106,6 +118,16 @@ export default function MapaCard({
               <Text style={styles.tagText}>{destLabel}</Text>
             </View>
           )}
+        </View>
+      )}
+
+      {/* ── Rota: distância e duração ── */}
+      {rota && (
+        <View style={styles.rotaChip}>
+          <Text style={styles.rotaText}>
+            {rota.distanciaKm.toLocaleString('pt-BR').replace('.', ',')} km · ~{rota.duracaoMin}{' '}
+            min
+          </Text>
         </View>
       )}
     </View>
@@ -151,5 +173,21 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '600',
     color: '#16202B',
+  },
+
+  rotaChip: {
+    position: 'absolute',
+    right: 10,
+    top: 10,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  rotaText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: C.navy,
+    fontVariant: ['tabular-nums'],
   },
 });

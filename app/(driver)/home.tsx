@@ -33,6 +33,7 @@ import {
 import type { Driver, Ride } from '../../src/types';
 import MapaCard from '../../src/components/MapaCard';
 import { formatarPreco } from '../../src/services/tarifas';
+import { buscarRota, type Rota } from '../../src/services/rotas';
 
 /* ── Cores do protótipo ── */
 const C = {
@@ -70,6 +71,7 @@ export default function DriverHomeScreen() {
   const [earnings, setEarnings] = useState(0);
   const [trips, setTrips] = useState(0);
   const [tripSeconds, setTripSeconds] = useState(0);
+  const [rota, setRota] = useState<Rota | null>(null);
   const stageRef = useRef<DriverStage>('idle');
   const requestIdRef = useRef<string | null>(null);
   const novasCorridasRef = useRef<RealtimeChannel | null>(null);
@@ -104,6 +106,28 @@ export default function DriverHomeScreen() {
       return () => clearInterval(id);
     }
   }, [stage]);
+
+  // rota do ponto de origem até o destino durante a viagem
+  useEffect(() => {
+    if (
+      stage !== 'trip' ||
+      !request ||
+      request.origem_lat == null ||
+      request.origem_lng == null ||
+      request.destino_lat == null ||
+      request.destino_lng == null
+    ) {
+      setRota(null);
+      return;
+    }
+    setRota(null);
+    buscarRota(
+      { lat: request.origem_lat, lng: request.origem_lng },
+      { lat: request.destino_lat, lng: request.destino_lng }
+    )
+      .then(setRota)
+      .catch(() => setRota(null));
+  }, [stage, request?.id]);
 
   const sincronizarStatusLocal = useCallback((novo: DriverStatus) => {
     setDriver((atual) => (atual ? { ...atual, status: novo } : atual));
@@ -588,6 +612,7 @@ export default function DriverHomeScreen() {
                   ? { lat: request.destino_lat, lng: request.destino_lng }
                   : undefined
               }
+              rota={rota}
             />
           </View>
           <View style={styles.panel}>
@@ -641,8 +666,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 18,
-    paddingTop: 44,
-    paddingBottom: 6,
+    paddingTop: 48,
+    paddingBottom: 10,
+    backgroundColor: C.bg,
+    shadowColor: C.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
   hello: { fontSize: 18, fontWeight: '800', color: C.text },
   sairText: { color: C.red, fontWeight: '600', fontSize: 14 },

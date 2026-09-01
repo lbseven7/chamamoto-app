@@ -96,6 +96,7 @@ import type { Ride } from '../../src/types';
 import MapaCard from '../../src/components/MapaCard';
 import { geocodificar } from '../../src/services/geocoding';
 import { calcularPreco, formatarPreco } from '../../src/services/tarifas';
+import { buscarRota, type Rota } from '../../src/services/rotas';
 
 /* ── Cores do protótipo ── */
 const C = {
@@ -142,6 +143,7 @@ export default function PassengerHomeScreen() {
   const [avaliando, setAvaliando] = useState(false);
   const [avaliada, setAvaliada] = useState(false);
   const [motoboyPos, setMotoboyPos] = useState<Localizacao | null>(null);
+  const [rota, setRota] = useState<Rota | null>(null);
   const [tripSeconds, setTripSeconds] = useState(0);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const driverChannelRef = useRef<RealtimeChannel | null>(null);
@@ -242,6 +244,27 @@ export default function PassengerHomeScreen() {
       return () => pararTimer();
     }
   }, [stage, pararTimer]);
+
+  // rota origem → destino da corrida
+  useEffect(() => {
+    if (!corrida) return;
+    if (
+      corrida.origem_lat == null ||
+      corrida.origem_lng == null ||
+      corrida.destino_lat == null ||
+      corrida.destino_lng == null
+    ) {
+      setRota(null);
+      return;
+    }
+    setRota(null);
+    buscarRota(
+      { lat: corrida.origem_lat, lng: corrida.origem_lng },
+      { lat: corrida.destino_lat, lng: corrida.destino_lng }
+    )
+      .then(setRota)
+      .catch(() => setRota(null));
+  }, [corrida?.id]);
 
   const pedirCorrida = () => {
     if (!destino.trim()) {
@@ -415,7 +438,7 @@ export default function PassengerHomeScreen() {
       {(stage === 'matched' || stage === 'enroute' || stage === 'arrived') && (
         <>
 <View style={styles.mapContainer}>
-            <MapaCard origem={localizacao} motoboy={motoboyPos} destino={destinoCorrida(corrida)} />
+            <MapaCard origem={localizacao} motoboy={motoboyPos} destino={destinoCorrida(corrida)} rota={rota} />
           </View>
           <View style={styles.panel}>
             <View style={styles.driverRow}>
@@ -472,7 +495,7 @@ export default function PassengerHomeScreen() {
       {stage === 'trip' && (
         <>
 <View style={styles.mapContainer}>
-            <MapaCard origem={localizacao} motoboy={motoboyPos} destino={destinoCorrida(corrida)} />
+            <MapaCard origem={localizacao} motoboy={motoboyPos} destino={destinoCorrida(corrida)} rota={rota} />
           </View>
           <View style={styles.panel}>
             <Text style={styles.tripTimer}>{mm}:{ss}</Text>
@@ -540,7 +563,7 @@ export default function PassengerHomeScreen() {
       {/* ── Header fixo ── */}
       {stage === 'home' && (
         <View style={styles.header}>
-          <Text style={styles.title}>Olá, {usuario?.nome}</Text>
+          <Text style={styles.headerTitle}>Olá, {usuario?.nome}</Text>
           <View style={styles.headerLinks}>
             <Link href="/perfil" style={styles.sair}>
               <Text style={styles.linkText}>Perfil</Text>
@@ -565,25 +588,32 @@ const styles = StyleSheet.create({
   },
   header: {
     position: 'absolute',
-    top: 44,
+    top: 0,
     left: 0,
     right: 0,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingTop: 48,
+    paddingBottom: 10,
+    backgroundColor: C.bg,
     zIndex: 10,
+    shadowColor: C.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  title: {
+  headerTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: C.text,
   },
-  sair: { padding: 8 },
-  sairText: { color: C.red, fontWeight: '600', fontSize: 14 },
   headerLinks: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   linkText: { color: C.navy, fontWeight: '600', fontSize: 14 },
+  sair: { padding: 8 },
+  sairText: { color: C.red, fontWeight: '600', fontSize: 14 },
 
   mapContainer: {
     width: '100%',
