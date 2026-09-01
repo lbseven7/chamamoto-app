@@ -32,6 +32,7 @@ import {
 } from '../../src/services/rides';
 import type { Driver, Ride } from '../../src/types';
 import MapaCard from '../../src/components/MapaCard';
+import { formatarPreco } from '../../src/services/tarifas';
 
 /* ── Cores do protótipo ── */
 const C = {
@@ -307,6 +308,7 @@ export default function DriverHomeScreen() {
       await atualizarStatusDriver(usuario.id, 'disponivel');
       sincronizarStatusLocal('disponivel');
       setTrips((t) => t + 1);
+      setEarnings((e) => e + (request.preco ?? 0));
       setStage('completed');
     } catch (err) {
       Alert.alert('Erro', (err as Error).message);
@@ -315,7 +317,7 @@ export default function DriverHomeScreen() {
     }
   };
 
-  const lastPrice = request?.avaliacao != null ? `R$ ${(request.avaliacao * 2).toFixed(2).replace('.', ',')}` : '';
+  const lastPrice = request?.preco != null ? formatarPreco(request.preco) : '';
 
   const goToIdle = () => {
     setStage('idle');
@@ -422,6 +424,7 @@ export default function DriverHomeScreen() {
                       <Text style={styles.mutedSmall}>
                         Passageiro: {item.passageiros?.nome ?? '—'}
                       </Text>
+                      <Text style={styles.precoDest}>Corrida {formatarPreco(item.preco)}</Text>
                       <View style={styles.row}>
                         <TouchableOpacity
                           style={[styles.ctaGreen, { flex: 1 }]}
@@ -463,6 +466,7 @@ export default function DriverHomeScreen() {
                       <Text style={styles.mutedSmall}>
                         Telefone: {item.passageiros?.telefone ?? '—'}
                       </Text>
+                      <Text style={styles.precoDest}>{formatarPreco(item.preco)}</Text>
                       <TouchableOpacity
                         style={[styles.cta, { marginTop: 12 }, processandoId === item.id && styles.ctaDisabled]}
                         onPress={() => acceptRequest(item)}
@@ -512,6 +516,7 @@ export default function DriverHomeScreen() {
             />
           </View>
           <Text style={styles.cardDestino}>{request.destino_texto}</Text>
+          <Text style={styles.precoDest}>{formatarPreco(request.preco)}</Text>
           <Text style={styles.mutedSmall}>
             Passageiro: {request.passageiros?.nome ?? '—'}
           </Text>
@@ -698,6 +703,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: C.text,
     marginBottom: 6,
+  },
+  precoDest: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.orange,
+    marginTop: 4,
   },
   sectionTitle: {
     fontSize: 16,

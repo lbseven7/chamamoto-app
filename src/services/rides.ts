@@ -9,6 +9,7 @@ export async function criarCorrida(dados: {
   destino_texto: string;
   destino_lat: number;
   destino_lng: number;
+  preco: number;
 }): Promise<Ride> {
   const { data, error } = await supabase
     .from('rides')

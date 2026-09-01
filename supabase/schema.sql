@@ -33,6 +33,7 @@ create table rides (
   destino_lat double precision,
   destino_lng double precision,
   status text check (status in ('solicitada','aceita','em_andamento','concluida','cancelada')) default 'solicitada',
+  preco numeric,
   avaliacao int,
   criado_em timestamp default now()
 );

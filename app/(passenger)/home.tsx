@@ -95,6 +95,7 @@ import {
 import type { Ride } from '../../src/types';
 import MapaCard from '../../src/components/MapaCard';
 import { geocodificar } from '../../src/services/geocoding';
+import { calcularPreco, formatarPreco } from '../../src/services/tarifas';
 
 /* ── Cores do protótipo ── */
 const C = {
@@ -261,6 +262,7 @@ export default function PassengerHomeScreen() {
           destino_texto: destino.trim(),
           destino_lat: coords.lat,
           destino_lng: coords.lng,
+          preco: calcularPreco(localizacao, coords),
         })
       )
       .then((nova) => {
@@ -404,6 +406,7 @@ export default function PassengerHomeScreen() {
         <View style={styles.centerStage}>
           <RadarAnim />
           <Text style={[styles.h2, { marginTop: 22 }]}>Procurando um motoboy...</Text>
+          <Text style={styles.precoBig}>{formatarPreco(corrida?.preco)}</Text>
           <Text style={styles.muted}>3 mototaxistas disponíveis perto de você</Text>
         </View>
       )}
@@ -436,6 +439,7 @@ export default function PassengerHomeScreen() {
               {stage === 'enroute' && 'Motoboy a caminho do seu ponto'}
               {stage === 'arrived' && 'Motoboy chegou! Ele está te esperando.'}
             </View>
+            <Text style={styles.precoBig}>{formatarPreco(corrida?.preco)}</Text>
             <View style={styles.actionsRow}>
               <TouchableOpacity style={styles.secondaryBtn}>
                 <Text style={styles.secondaryBtnText}>Ligar</Text>
@@ -475,6 +479,7 @@ export default function PassengerHomeScreen() {
             <Text style={[styles.muted, { textAlign: 'center' }]}>
               Corrida em andamento
             </Text>
+            <Text style={styles.precoBig}>{formatarPreco(corrida?.preco)}</Text>
             <Text style={[styles.muted, { textAlign: 'center', marginBottom: 14 }]}>
               Destino: {corrida?.destino_texto}
             </Text>
@@ -504,7 +509,7 @@ export default function PassengerHomeScreen() {
             ))}
           </View>
           <Text style={styles.muted}>
-            Corrida para {corrida?.destino_texto || 'destino'}
+            Corrida para {corrida?.destino_texto || 'destino'} · {formatarPreco(corrida?.preco)}
           </Text>
           <TouchableOpacity
             style={[styles.cta, { marginTop: 10 }, (avaliando || nota < 1) && styles.ctaDisabled]}
@@ -571,8 +576,8 @@ const styles = StyleSheet.create({
   sairText: { color: C.red, fontWeight: '600', fontSize: 14 },
 
   mapContainer: {
-    height: 250,
     width: '100%',
+    height: 340,
     flexShrink: 0,
   },
   mapLoading: {
@@ -698,6 +703,15 @@ const styles = StyleSheet.create({
     padding: 10,
     borderRadius: 12,
     marginBottom: 4,
+  },
+
+  precoBig: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: C.orange,
+    textAlign: 'center',
+    marginVertical: 8,
+    fontVariant: ['tabular-nums'],
   },
 
   tripTimer: {

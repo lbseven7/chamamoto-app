@@ -33,6 +33,7 @@ export interface Ride {
     | 'em_andamento'
     | 'concluida'
     | 'cancelada';
+  preco: number | null;
   avaliacao: number | null;
   criado_em: string;
 }
